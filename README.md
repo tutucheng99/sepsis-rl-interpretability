@@ -1,6 +1,6 @@
 # Performance and Interpretability Trade-Offs in Reinforcement Learning for Sepsis Treatment: Comparing Offline and Online Approaches
 
-**Authors:** Zhiyu Cheng\*, Chuanhui Peng, Yalun Ding
+**Authors:** Zhiyu Cheng\*, Chuanhui Peng, Yalun Ding//
 **Affiliation:** Department of Statistics, Columbian College of Arts and Sciences, George Washington University, Washington, DC 20052, USA
 **\*Corresponding Author:** zhiyu.cheng@email.gwu.edu
 
