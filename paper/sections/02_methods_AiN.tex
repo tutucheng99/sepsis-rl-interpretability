@@ -1,0 +1,176 @@
+% ============================================================
+% MATERIALS AND METHODS SECTION - AiN Format
+% ============================================================
+
+\section{Materials and Methods}\label{sec:methods}
+
+We formulate sepsis treatment as a finite-horizon Markov Decision Process (MDP) in the offline reinforcement learning setting, where the goal is to learn an optimal policy from a fixed dataset without further environment interaction. We describe the experimental setup including the gym-sepsis simulation environment, offline and online RL algorithms, LEG interpretability analysis, and evaluation protocol.
+
+% ============================================================
+\subsection{MDP Formulation}\label{sec:methods:mdp}
+
+The sepsis treatment MDP is defined by the tuple $\mathcal{M} = (\mathcal{S}, \mathcal{A}, \mathcal{P}, \mathcal{R}, \gamma)$. The state space $\mathcal{S} \subset \mathbb{R}^{46}$ captures patient physiological condition through laboratory values, vital signs, and clinical severity scores. The action space $\mathcal{A}$ contains 24 discrete actions indexed from 0 to 23, representing a $5 \times 5$ grid of IV fluid and vasopressor dosing levels. The gym-sepsis environment implements the mapping:
+\begin{equation}
+a = \min(5 \times \text{IV\_bin} + \text{VP\_bin}, 23)
+\end{equation}
+effectively merging the highest dosage combination into action 23. The transition dynamics $\mathcal{P}(s_{t+1} | s_t, a_t)$ are learned from MIMIC-III data via the gym-sepsis simulator.$^{1}$ The reward function uses sparse terminal rewards: $\mathcal{R}(s_T, a_T) = +15$ for survival, $-15$ for death, and $0$ for intermediate steps. We use discount factor $\gamma = 0.99$.
+
+A policy $\pi: \mathcal{S} \to \Delta(\mathcal{A})$ maps states to action distributions. The goal is to find $\pi^* = \arg\max_\pi V^\pi(s)$ where the value function is:
+\begin{equation}
+V^\pi(s) = \mathbb{E}_{\tau \sim \pi, \mathcal{P}} \left[ \sum_{t=0}^{H-1} \gamma^t \mathcal{R}(s_t, a_t) \,\Big|\, s_0 = s \right]
+\end{equation}
+The action-value function $Q^\pi(s, a)$ represents expected return when taking action $a$ in state $s$ and following $\pi$ thereafter. The optimal policy is derived via $\pi^*(s) = \arg\max_a Q^*(s, a)$.
+
+In offline RL, the agent learns exclusively from a fixed dataset $\mathcal{D} = \{(s_i, a_i, r_i, s'_i)\}_{i=1}^N$ collected under a behavioral policy, without environment interaction during training.$^{2}$ The central challenge is distributional shift, where the learned policy $\pi$ may select out-of-distribution actions with unreliable Q-value estimates due to extrapolation error.$^{3}$
+
+% ============================================================
+\subsection{Environment and Data}\label{sec:methods:env}
+
+\subsubsection{Gym-Sepsis Simulator}
+
+We use Gym-Sepsis,$^{1}$ an RL simulator for ICU sepsis treatment trained on MIMIC-III data (Beth Israel Deaconess Medical Center, Boston, MA, USA).$^{4}$
+
+At each timestep, the state is a 46-dimensional vector spanning laboratory values such as lactate, creatinine, and platelet count, vital signs such as blood pressure, heart rate, and SpO$_2$, demographics including age, gender, and race, clinical severity scores including SOFA, LODS, SIRS, qSOFA, and Elixhauser, and treatment status including mechanical ventilation and blood culture. The SOFA score$^{5}$ ranges from 0 to 24, with higher values indicating greater organ dysfunction.
+
+The action space is discrete with 24 actions indexed from 0 to 23, derived from a $5 \times 5$ grid over IV fluid and vasopressor dosage bins. Episodes span ICU stays with 4-hour timesteps until discharge or death. We use sparse rewards: $r_t = +15$ for survival, $-15$ for death, and $0$ for intermediate steps.
+
+\subsubsection{Offline Training Dataset}
+
+We generated an offline dataset of 2,105 episodes with approximately 20K transitions using a heuristic policy based on clinical guidelines,$^{6,7}$ achieving 94.6\% survival. All episodes were used for training without held-out validation or test sets from the offline data. Performance evaluation was conducted by running trained policies on 500 newly sampled episodes in the gym-sepsis simulator.
+
+% ============================================================
+\subsection{Algorithms}\label{sec:methods:algos}
+
+We compare 3 offline RL algorithms representing different learning paradigms: Behavior Cloning for supervised learning, Conservative Q-Learning for offline Q-learning, and Deep Q-Network as online RL adapted for offline evaluation. We also evaluate 3 online RL algorithms with architectural innovations. All algorithms use the same neural network architecture for fair comparison, a 3-layer multilayer perceptron with hidden dimensions of 256, 256, and 128 with ReLU activations.
+
+\subsubsection{Offline RL Algorithms}
+
+\paragraph{Behavior Cloning (BC).}
+Behavior Cloning treats offline RL as a supervised learning problem, training a policy to imitate the behavioral policy by minimizing the negative log-likelihood of observed actions.$^{8}$ Given a dataset $\mathcal{D} = \{(s_i, a_i)\}_{i=1}^N$ of state-action pairs, BC learns a policy $\pi_{\theta}(a|s)$ by solving:
+\begin{equation}
+\theta^* = \arg\min_{\theta} -\frac{1}{N} \sum_{i=1}^N \log \pi_{\theta}(a_i | s_i)
+\end{equation}
+We use d3rlpy's DiscreteBCConfig (Takuma Seno, GitHub, Japan) with batch size 1,024, learning rate $1 \times 10^{-3}$ with Adam optimizer, training for 50,000 gradient steps over 10 epochs.
+
+\paragraph{Conservative Q-Learning (CQL).}
+Conservative Q-Learning$^{9}$ is an offline RL algorithm that learns a conservative Q-function to avoid overestimation on out-of-distribution actions. CQL augments the standard Bellman error with a conservatism penalty:
+\begin{equation}
+\min_Q \alpha \cdot \mathbb{E}_{s \sim \mathcal{D}} \left[ \log \sum_a \exp Q(s, a) - \mathbb{E}_{a \sim \pi_\beta} Q(s, a) \right] + \frac{1}{2} \mathbb{E}_{(s,a,r,s') \sim \mathcal{D}} \left[ (Q(s,a) - \mathcal{T}^\pi Q(s,a))^2 \right]
+\end{equation}
+where $\alpha$ controls the strength of the conservatism penalty, $\pi_\beta$ is the behavioral policy, and $\mathcal{T}^\pi$ is the Bellman operator. We use d3rlpy's DiscreteCQLConfig with batch size 1,024, learning rate $3 \times 10^{-4}$ with Adam optimizer, $\alpha = 1.0$, target network updates every 2,000 steps, training for 200,000 gradient steps.
+
+\paragraph{Deep Q-Network (DQN).}
+Deep Q-Network$^{10}$ combines Q-learning with deep neural networks using experience replay and target networks for stability. The Q-function is updated to minimize the temporal difference error:
+\begin{equation}
+\mathcal{L}(\theta) = \mathbb{E}_{(s,a,r,s') \sim \mathcal{D}} \left[ \left( Q_\theta(s,a) - \left( r + \gamma \max_{a'} Q_{\theta^-}(s', a') \right) \right)^2 \right]
+\end{equation}
+We use Stable-Baselines3 (DLR-RM, GitHub, Germany) with batch size 256, learning rate $1 \times 10^{-4}$, target network updates every 1,000 steps, $\epsilon$-greedy exploration from 1.0 to 0.05, training for 100,000 timesteps.
+
+\subsubsection{Online RL Algorithms}
+
+To provide a comprehensive comparison between offline and online RL paradigms, we also evaluate 3 state-of-the-art online RL algorithms with architectural innovations. These algorithms train by interacting with the Gym-Sepsis simulator, collecting 1 million timesteps of experience through exploration.
+
+\paragraph{Double DQN with Attention (DDQN-Attention).}
+This algorithm extends Double DQN$^{11}$ with a multi-head self-attention mechanism in the encoder network:
+\begin{equation}
+h_t = \text{MultiHeadAttention}(s_t, s_t, s_t) + s_t
+\end{equation}
+The attention mechanism computes scaled dot-product attention across 4 parallel heads, each learning different feature correlations.
+
+\paragraph{Double DQN with Residual Connections (DDQN-Residual).}
+This variant incorporates deep residual networks$^{12}$ with skip connections between layers:
+\begin{equation}
+h_{l+1} = \sigma(\text{LayerNorm}(W_l h_l + b_l + h_l))
+\end{equation}
+where $\sigma$ is the ReLU activation, $W_l$ and $b_l$ are learnable weights and biases.
+
+\paragraph{Soft Actor-Critic (SAC).}
+SAC$^{13}$ is a maximum entropy RL algorithm that optimizes both expected return and policy entropy:
+\begin{equation}
+J(\pi) = \mathbb{E}_{\tau \sim \pi}\left[\sum_t r(s_t, a_t) + \alpha \mathcal{H}(\pi(\cdot|s_t))\right]
+\end{equation}
+where $\mathcal{H}(\pi(\cdot|s))$ is the entropy of the policy at state $s$, and $\alpha$ is a temperature parameter. We use the discrete action space variant with a residual encoder architecture.
+
+\paragraph{Training Details.}
+All 3 online RL algorithms were trained with 1,000,000 environment interaction steps using experience replay buffers of size 100,000. Training used batch size 256, learning rate $3 \times 10^{-4}$ with Adam optimizer, and target network soft updates with $\tau = 0.005$.
+
+% ============================================================
+\subsection{LEG Interpretability Analysis}\label{sec:methods:leg}
+
+To assess interpretability, we employ Linearly Estimated Gradients (LEG),$^{14}$ a model-agnostic perturbation-based method for computing feature importance in RL policies. LEG approximates the policy gradient $\nabla_s Q(s_0, \pi(s_0))$ with respect to state features by locally linearizing the Q-function around a reference state $s_0$.
+
+\subsubsection{LEG Algorithm}
+
+Given a state $s_0 \in \mathbb{R}^{46}$ and a learned policy $\pi$ derived from Q-function $Q(s,a)$ as $\pi(s) = \arg\max_a Q(s,a)$, LEG estimates the saliency vector $\hat{\gamma} \in \mathbb{R}^{46}$ through the following procedure.
+
+For perturbation sampling, we generate $n = 1{,}000$ random perturbations $Z_i \sim \mathcal{N}(0, \sigma^2 I)$ with $\sigma = 0.1$, producing perturbed states:
+\begin{equation}
+s_i = s_0 + Z_i, \quad i = 1, \ldots, n
+\end{equation}
+
+For Q-value evaluation, we compute the Q-value change for each perturbed state $s_i$ and the selected action $a_0 = \pi(s_0)$:
+\begin{equation}
+\hat{y}_i = Q(s_i, a_0) - Q(s_0, a_0)
+\end{equation}
+
+For ridge regression, we compute the sample covariance matrix of perturbations:
+\begin{equation}
+\Sigma = \frac{1}{n} Z^\top Z + \lambda I, \quad \lambda = 10^{-6}
+\end{equation}
+
+For gradient estimation, we estimate the saliency vector via the closed-form ridge regression solution:
+\begin{equation}
+\hat{\gamma} = \Sigma^{-1} \left( \frac{1}{n} Z^\top \hat{y} \right)
+\end{equation}
+where $\hat{y} = [\hat{y}_1, \ldots, \hat{y}_n]^\top$. Each element $\hat{\gamma}_j$ quantifies the marginal contribution of feature $j$ to the Q-value.
+
+\subsubsection{State Selection and Analysis Protocol}
+
+We apply LEG to all 6 algorithms using identical parameters for fair comparison. For each algorithm, we analyze 10 representative states sampled from the gym-sepsis environment, ensuring coverage across SOFA severity levels with low being SOFA $\leq$ 5, medium being 6-10, and high being $\geq$ 11.
+
+\subsubsection{Interpretability Metrics}
+
+We quantify interpretability using 3 complementary metrics. Maximum saliency magnitude is the absolute value of the largest saliency score, $\max_j |\hat{\gamma}_j|$, measuring whether any single feature exerts dominant influence on the Q-function. Saliency range is the difference between maximum and minimum saliency scores, indicating how concentrated importance is across features. Clinical coherence is a qualitative assessment of whether top-ranked features align with established medical knowledge, comparing LEG-identified important features against Surviving Sepsis Campaign guidelines.$^{6}$
+
+% ============================================================
+\subsection{Evaluation Metrics}\label{sec:methods:eval}
+
+We evaluate algorithm performance using outcome-based and severity-stratified metrics.
+
+\subsubsection{Primary Outcome Metrics}
+
+Survival rate is the proportion of evaluation episodes ending in patient discharge rather than mortality:
+\begin{equation}
+\text{Survival Rate} = \frac{1}{N} \sum_{i=1}^N \mathbb{1}[R_i > 0]
+\end{equation}
+where $N$ is the number of evaluation episodes and $R_i = \sum_t r_{i,t}$ is the cumulative return for episode $i$.
+
+Average return is the mean cumulative reward across all episodes:
+\begin{equation}
+\bar{R} = \frac{1}{N} \sum_{i=1}^N \sum_{t=1}^{T_i} r_{i,t}
+\end{equation}
+
+Average episode length is the mean number of timesteps per episode:
+\begin{equation}
+\bar{T} = \frac{1}{N} \sum_{i=1}^N T_i
+\end{equation}
+
+\subsubsection{SOFA-Stratified Analysis}
+
+To assess algorithm performance across patient severity levels, we stratify evaluation episodes by initial Sequential Organ Failure Assessment score.$^{5}$ We define 3 severity strata: Low SOFA ($s_0^{\text{SOFA}} \leq 5$), Medium SOFA ($6 \leq s_0^{\text{SOFA}} \leq 10$), and High SOFA ($s_0^{\text{SOFA}} \geq 11$).
+
+% ============================================================
+\subsection{Baseline Policies}\label{sec:methods:baselines}
+
+To contextualize RL algorithm performance, we evaluate 2 baseline policies. The random policy selects actions uniformly at random from the 24-action space at each timestep, with $\pi(a|s) = \frac{1}{24}$. The heuristic policy implements threshold-based rules from sepsis guidelines$^{6}$: it escalates IV fluids when SysBP is below 100 mmHg or lactate is above 2.0 mmol/L, and escalates vasopressors when MeanBP is below 65 mmHg.
+
+% ============================================================
+\subsection{Statistical Analysis}\label{sec:methods:stats}
+
+All policies were evaluated on $N = 500$ episodes in the Gym-Sepsis simulator using a standardized protocol. Each episode begins with stochastic initialization sampling an initial patient state from the MIMIC-III-derived distribution. Policies are evaluated deterministically without exploration noise. For discrete policies, we select $a_t = \arg\max_a Q(s_t, a)$. For SAC, we use the mean action.
+
+Episodes terminate when the simulator predicts patient discharge or death, or after 50 timesteps (approximately 8.3 days), whichever occurs first. All results are reported as mean $\pm$ standard deviation. Given the sample size of $N = 500$, performance differences exceeding approximately $\pm 2\%$ for survival rates likely reflect genuine algorithmic differences rather than sampling variability.
+
+All experiments were conducted using Python 3.9 with PyTorch 1.12 (Facebook AI Research, Menlo Park, CA, USA), d3rlpy 1.1.1, and Stable-Baselines3 1.6.0.
+
+% End of Materials and Methods section

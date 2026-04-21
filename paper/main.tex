@@ -7,7 +7,7 @@
 %          *Corresponding author: zhiyu.cheng@email.gwu.edu
 % Date: October 2025
 % ============================================================
-
+，
 \documentclass[11pt]{article}
 
 % ============================================================
@@ -67,7 +67,7 @@
 \hypersetup{
   pdftitle={Performance and Interpretability Trade-offs in Reinforcement Learning for Sepsis Treatment: Comparing Offline and Online Approaches},
   pdfauthor={Zhiyu Cheng (corresponding), Yalun Ding, Chuanhui Peng},
-  pdfkeywords={Reinforcement Learning, Sepsis Treatment, Interpretability, Conservative Q-Learning, LEG Analysis, Offline RL, MIMIC-III},
+  pdfkeywords={Reinforcement Learning, Sepsis Treatment, Interpretability, Conservative Q-Learning, LEG Analysis, Offline RL, MIMIC-III, Sepsis-Associated Encephalopathy, AI in Neurology},
   colorlinks=true,
   linkcolor={blue},
   filecolor={red},
@@ -95,9 +95,9 @@
   \title{\bf Performance and Interpretability Trade-offs in Reinforcement Learning for Sepsis Treatment: Comparing Offline and Online Approaches}
   \author{
     Zhiyu Cheng\thanks{Equal contribution. Authors listed alphabetically. The authors gratefully acknowledge the support of STAT 8289 - Reinforcement Learning course at George Washington University. This work uses the MIMIC-III database (Johnson et al., 2016) and builds upon the gym-sepsis environment (Raghu et al., 2017).}$^{1,*}$,
-    Yalun Ding$^{1}$,
-    Chuanhui Peng$^{1}$ \\
-    $^{1}$Department of Statistics, George Washington University \\
+    Chuanhui Peng$^{1}$,
+    Yalun Ding$^{1}$ \\
+    $^{1}$Department of Statistics, Columbian College of Arts and Sciences, George Washington University, Washington, DC 20052, USA \\
     $^{*}$Corresponding author: zhiyu.cheng@email.gwu.edu
   }
   \maketitle
@@ -119,13 +119,13 @@
 % ============================================================
 \bigskip
 \begin{abstract}
-Sepsis remains a leading cause of mortality in critical care, and reinforcement learning (RL) offers a promising route to data-driven treatment policies. Yet clinical adoption is impeded by the prevailing assumption that interpretability inevitably compromises performance, and that online RL methods necessarily outperform offline approaches. We interrogate these trade-offs by comparing three offline RL methods (Behavior Cloning, Conservative Q-Learning, and Deep Q-Network trained on static datasets) with three online RL methods (Double DQN with Attention, Double DQN with Residual connections, and Soft Actor-Critic with environment interaction) using the gym-sepsis simulator—a MIMIC-III–derived environment for sepsis treatment. Policy quality is assessed through patient-survival rates stratified by Sequential Organ Failure Assessment (SOFA) states, while interpretability is quantified with Linearly Estimated Gradients (LEG), a model-agnostic feature-importance method.
+Sepsis remains a leading cause of mortality in critical care and a major contributor to long-term neurological morbidity. Survivors face elevated risks of sepsis-associated encephalopathy, cognitive impairment, and accelerated neurodegenerative disease progression including Alzheimer's disease. Reinforcement learning (RL) offers a promising route to data-driven treatment policies that could optimize both acute survival and long-term neurological outcomes. Yet clinical adoption is impeded by 2 prevailing assumptions: that interpretability inevitably compromises performance, and that online RL methods necessarily outperform offline approaches. We examine these trade-offs by comparing 3 offline RL methods, namely Behavior Cloning, Conservative Q-Learning, and Deep Q-Network trained on static datasets, with 3 online RL methods, namely Double DQN with Attention, Double DQN with Residual connections, and Soft Actor-Critic with environment interaction, using the gym-sepsis simulator, a MIMIC-III derived environment for sepsis treatment. We assess policy quality through patient survival rates stratified by Sequential Organ Failure Assessment (SOFA) states, while quantifying interpretability with Linearly Estimated Gradients (LEG), a model-agnostic feature importance method.
 
-Across 500 evaluation episodes, online RL achieves marginally higher overall survival (95.4\% for DDQN-Attention vs. 94.0\% for CQL), with a 2.0 percentage point advantage on high-severity patients (90.5\% vs. 88.5\%). However, comprehensive LEG analysis across all six algorithms reveals a measurable performance-interpretability trade-off: CQL achieves maximum saliency of 40.06 (excellent interpretability with clinically coherent emphasis on blood pressure and lactate), online methods achieve 1.17--3.57 (moderate interpretability), and vanilla DQN achieves only 0.069 (poor interpretability)—spanning three orders of magnitude. Critically, DDQN-Attention's 1.4 percentage point survival advantage over CQL comes at an 11-fold loss in interpretability (3.57 vs. 40.06), demonstrating that the modest performance gain requires sacrificing explainability and incurring extensive environment interaction during training—both infeasible in clinical settings where patient safety and regulatory approval demand transparent decision logic. These results challenge the assumption that interpretability inevitably compromises performance, showing instead that conservative offline RL (CQL) offers the optimal balance for clinical deployment: competitive survival rates with superior explainability and no patient risk during training.
+Across held-out evaluation episodes, online RL achieves marginally higher overall survival than offline methods. DDQN-Attention shows small advantages over CQL on both overall and high-severity patient populations. However, all algorithms achieve similar survival rates, with differences that may reflect random variation rather than meaningful algorithmic superiority. Comprehensive LEG analysis across all 6 algorithms reveals substantial variation in feature importance magnitude. CQL achieves the strongest feature-driven signals with clinically coherent emphasis on blood pressure and lactate, online methods exhibit intermediate signals, and vanilla DQN produces only negligible signals, spanning 3 orders of magnitude. The modest survival advantage of DDQN-Attention over CQL comes at a substantial reduction in saliency magnitude, demonstrating a measurable performance-interpretability trade-off. This modest performance difference requires sacrificing saliency signal strength and incurring extensive environment interaction during training. Both are problematic for clinical settings where regulatory approval demands quantifiable feature importance and patient safety prohibits exploratory interventions. \textbf{Within this sepsis treatment simulator}, these results suggest that conservative offline RL, specifically CQL, offers a favorable balance for clinical deployment: comparable survival rates with substantially stronger, clinically coherent feature importance signals and no patient risk during training. Generalization to other clinical domains and real-world deployment requires prospective validation.
 \end{abstract}
 
 \noindent%
-{\it Keywords:} Reinforcement Learning, Sepsis Treatment, Interpretability, Conservative Q-Learning, LEG Analysis, Offline RL, MIMIC-III
+{\it Keywords:} Reinforcement Learning, Sepsis Treatment, Interpretability, Conservative Q-Learning, LEG Analysis, Offline RL, MIMIC-III, Sepsis-Associated Encephalopathy, Neurological Outcomes, Blood-Brain Barrier, AI in Neurology
 
 \vfill
 \newpage
@@ -189,7 +189,7 @@ The authors declare no conflicts of interest.
 
 \section{Data Availability Statement}
 
-This study uses the MIMIC-III database \citep{johnson2016mimic3} and the gym-sepsis simulation environment (\url{https://github.com/gefeilin/gym-sepsis/tree/main/gym_sepsis/envs}). Code for replication is available at \url{https://github.com/akiani/gym-sepsis}.
+This study uses the MIMIC-III database \citep{johnson2016mimic3} and the gym-sepsis simulation environment (\url{https://github.com/gefeilin/gym-sepsis/tree/main/gym_sepsis/envs}). Code and data for replication are available at \url{https://github.com/tutucheng99/sepsis-rl-interpretability}.
 
 % ============================================================
 % APPENDIX

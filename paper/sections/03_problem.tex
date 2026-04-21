@@ -9,7 +9,7 @@ We formulate sepsis treatment as a finite-horizon Markov Decision Process (MDP) 
 % ============================================================
 \subsection{MDP Formulation}\label{sec:problem:mdp}
 
-The sepsis treatment MDP is defined by the tuple $\mathcal{M} = (\mathcal{S}, \mathcal{A}, \mathcal{P}, \mathcal{R}, \gamma)$. The \textbf{state space} $\mathcal{S} \subset \mathbb{R}^{46}$ captures patient physiological condition through laboratory values, vital signs, and clinical severity scores as detailed in Section~\ref{sec:methods:env}. The \textbf{action space} $\mathcal{A}$ contains 25 discrete actions representing a $5 \times 5$ grid of IV fluid and vasopressor dosing levels. The \textbf{transition dynamics} $\mathcal{P}(s_{t+1} | s_t, a_t)$ are learned from MIMIC-III data via the gym-sepsis simulator \citep{raghu2017sepsis_drl}. The \textbf{reward function} uses sparse terminal rewards: $\mathcal{R}(s_T, a_T) = +15$ for survival, $-15$ for death, and $0$ for intermediate steps. We use discount factor $\gamma = 0.99$.
+The sepsis treatment MDP is defined by the tuple $\mathcal{M} = (\mathcal{S}, \mathcal{A}, \mathcal{P}, \mathcal{R}, \gamma)$. The state space $\mathcal{S} \subset \mathbb{R}^{46}$ captures patient physiological condition through laboratory values, vital signs, and clinical severity scores as detailed in Section~\ref{sec:methods:env}. The action space $\mathcal{A}$ contains 24 discrete actions indexed from 0 to 23, representing a $5 \times 5$ grid of IV fluid and vasopressor dosing levels. The gym-sepsis environment implements the mapping $a = \min(5 \times \text{IV\_bin} + \text{VP\_bin}, 23)$, effectively merging the highest dosage combination into action 23. The transition dynamics $\mathcal{P}(s_{t+1} | s_t, a_t)$ are learned from MIMIC-III data via the gym-sepsis simulator \citep{raghu2017sepsis_drl}. The reward function uses sparse terminal rewards: $\mathcal{R}(s_T, a_T) = +15$ for survival, $-15$ for death, and $0$ for intermediate steps. We use discount factor $\gamma = 0.99$.
 
 A policy $\pi: \mathcal{S} \to \Delta(\mathcal{A})$ maps states to action distributions. The goal is to find $\pi^* = \arg\max_\pi V^\pi(s)$ where the value function is:
 \begin{equation}
@@ -21,28 +21,22 @@ The action-value function $Q^\pi(s, a)$ represents expected return when taking a
 % ============================================================
 \subsection{Offline RL Setting}\label{sec:problem:offline}
 
-In offline RL, the agent learns exclusively from a fixed dataset $\mathcal{D} = \{(s_i, a_i, r_i, s'_i)\}_{i=1}^N$ collected under a behavioral policy, without environment interaction during training \citep{levine2020offline}. The central challenge is \textit{distributional shift}: the learned policy $\pi$ may select out-of-distribution (OOD) actions where Q-value estimates are unreliable due to extrapolation error \citep{fujimoto2019offpolicy}.
+In offline RL, the agent learns exclusively from a fixed dataset $\mathcal{D} = \{(s_i, a_i, r_i, s'_i)\}_{i=1}^N$ collected under a behavioral policy, without environment interaction during training \citep{levine2020offline}. The central challenge is distributional shift, where the learned policy $\pi$ may select out-of-distribution actions with unreliable Q-value estimates due to extrapolation error \citep{fujimoto2019offpolicy}.
 
-Conservative Q-Learning (CQL) \citep{kumar2020cql} addresses this via pessimism, penalizing Q-values for OOD actions:
+Conservative Q-Learning \citep{kumar2020cql} addresses this via pessimism by penalizing Q-values for out-of-distribution actions:
 \begin{equation}
 \min_Q \, \mathbb{E}_{(s,a,r,s') \sim \mathcal{D}} \left[ \left( Q(s, a) - \left( r + \gamma \max_{a'} Q(s', a') \right) \right)^2 \right] + \alpha \cdot \mathbb{E}_{s \sim \mathcal{D}} \left[ \log \sum_{a} \exp(Q(s, a)) - \mathbb{E}_{a \sim \pi_\beta} [Q(s, a)] \right],
 \end{equation}
-where $\alpha > 0$ controls conservatism strength. Behavior Cloning (BC) avoids distributional shift by imitating the behavioral policy via supervised learning: $\pi_{\text{BC}} = \arg\max_\pi \mathbb{E}_{(s, a) \sim \mathcal{D}} [\log \pi(a | s)]$, but cannot improve beyond the behavioral policy's performance.
+where $\alpha > 0$ controls conservatism strength. Behavior Cloning avoids distributional shift by imitating the behavioral policy via supervised learning: $\pi_{\text{BC}} = \arg\max_\pi \mathbb{E}_{(s, a) \sim \mathcal{D}} [\log \pi(a | s)]$, but cannot improve beyond the behavioral policy's performance.
 
 
 % ============================================================
 \subsection{Interpretability via LEG}\label{sec:problem:interp}
 
-Interpretability quantifies the extent to which clinicians can understand policy decisions—critical for regulatory approval \citep{fda2021ai} and clinical trust \citep{holzinger2017xai_healthcare}. We use Linearly Estimated Gradients (LEG) \citep{greydanus2018leg}, a model-agnostic perturbation method measuring feature importance.
+Interpretability quantifies the extent to which clinicians can understand policy decisions. This is critical for regulatory approval \citep{fda2021ai} and clinical trust \citep{holzinger2017xai_healthcare}. We use Linearly Estimated Gradients \citep{greydanus2018leg}, a model-agnostic perturbation method measuring feature importance.
 
-For a policy $\pi$ and state $s$, LEG approximates the saliency (gradient) of the Q-function with respect to each state feature via:
-\begin{enumerate}
-\item Sample $M = 1000$ perturbations $\delta^{(m)} \sim \mathcal{N}(0, \sigma^2 I)$ with $\sigma = 0.05$
-\item Evaluate perturbed Q-values: $\Delta Q^{(m)} = Q(s + \delta^{(m)}, a) - Q(s, a)$
-\item Fit linear regression: $\Delta Q^{(m)} \approx \sum_{j=1}^{46} w_j \cdot \delta_j^{(m)}$ via OLS
-\item Extract saliency scores: $\text{Saliency}_j(s, a) = w_j$
-\end{enumerate}
+For a policy $\pi$ and state $s$, LEG approximates the saliency of the Q-function with respect to each state feature. We sample $M = 1000$ perturbations $\delta^{(m)} \sim \mathcal{N}(0, \sigma^2 I)$ with $\sigma = 0.05$. We then evaluate perturbed Q-values as $\Delta Q^{(m)} = Q(s + \delta^{(m)}, a) - Q(s, a)$. We fit linear regression $\Delta Q^{(m)} \approx \sum_{j=1}^{46} w_j \cdot \delta_j^{(m)}$ via OLS and extract saliency scores as $\text{Saliency}_j(s, a) = w_j$.
 
-We quantify interpretability via: (1) \textbf{maximum saliency magnitude} $\max_{s, j} |\text{Saliency}_j(s, a)|$, measuring signal strength; (2) \textbf{saliency range}, capturing feature differentiation; (3) \textbf{clinical coherence}, assessing whether top features align with medical knowledge (e.g., blood pressure, lactate for sepsis). Policies with strong saliency signals ($>10$), large ranges, and high clinical coherence are deemed interpretable.
+We quantify interpretability using 3 metrics. Maximum saliency magnitude, defined as $\max_{s, j} |\text{Saliency}_j(s, a)|$, measures signal strength. Saliency range captures feature differentiation. Clinical coherence assesses whether top features align with medical knowledge such as blood pressure and lactate for sepsis. Policies with strong saliency signals greater than 10, large ranges, and high clinical coherence are deemed interpretable.
 
 % End of Problem Formulation section

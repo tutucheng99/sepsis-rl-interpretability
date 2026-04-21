@@ -1,0 +1,222 @@
+# Environment Configuration for Sepsis Safe Offline RL
+
+# =============================================================================
+# Gym-Sepsis Environment Settings
+# =============================================================================
+gym_sepsis:
+  # State space configuration
+  state_space:
+    # SOFA (Sequential Organ Failure Assessment) components
+    sofa_components:
+      - respiratory  # PaO2/FiO2 ratio
+      - coagulation  # Platelets
+      - liver        # Bilirubin
+      - cardiovascular  # MAP and vasopressor use
+      - cns          # Glasgow Coma Scale
+      - renal        # Creatinine or urine output
+
+    # Additional vital signs and lab values
+    vital_signs:
+      - heart_rate
+      - mean_arterial_pressure  # MAP
+      - respiratory_rate
+      - temperature
+      - spo2  # Oxygen saturation
+
+    lab_values:
+      - lactate
+      - creatinine
+      - bilirubin
+      - platelets
+      - wbc  # White blood cell count
+
+    # Treatment history (for context)
+    treatment_history:
+      - vasopressor_dose_last_step
+      - fluid_dose_last_step
+      - time_since_sepsis_onset
+
+  # Action space configuration (discrete 5x5 grid)
+  action_space:
+    type: discrete
+    dimensions: 2  # [vasopressor, IV_fluids]
+
+    # Vasopressor (e.g., norepinephrine in mcg/kg/min)
+    vasopressor:
+      levels: 5
+      ranges:
+        - [0.0, 0.0]      # Level 0: None
+        - [0.01, 0.08]    # Level 1: Low
+        - [0.08, 0.15]    # Level 2: Medium-low
+        - [0.15, 0.25]    # Level 3: Medium-high
+        - [0.25, 0.5]     # Level 4: High
+
+    # IV fluids (in mL)
+    iv_fluids:
+      levels: 5
+      ranges:
+        - [0, 0]          # Level 0: None
+        - [1, 250]        # Level 1: Low
+        - [250, 500]      # Level 2: Medium
+        - [500, 1000]     # Level 3: High
+        - [1000, 2000]    # Level 4: Very high
+
+    # Total action space size
+    total_actions: 25  # 5 vasopressor × 5 fluids
+
+  # Episode configuration
+  episode:
+    max_length: 20  # Maximum steps per episode (e.g., 20 × 4hr = 80 hours)
+    time_step: 4    # Hours between decisions
+
+  # Data source
+  data_source:
+    # Options: "mimic_iii", "mimic_iv", "eicu", "synthetic"
+    name: "mimic_iii"
+    version: "1.4"
+
+# =============================================================================
+# Computational Environment
+# =============================================================================
+compute:
+  # Random seed for reproducibility
+  random_seed: 42
+
+  # Precision (FP32 for numerical stability)
+  precision: "fp32"  # Options: "fp32", "fp16", "bf16"
+
+  # Device configuration
+  device:
+    type: "auto"  # Options: "auto", "cpu", "cuda", "mps"
+    gpu_id: 0
+
+  # Parallelization
+  num_workers: 4  # For data loading
+
+  # Memory management
+  pin_memory: true
+  prefetch_factor: 2
+
+# =============================================================================
+# Python Environment
+# =============================================================================
+python:
+  version: "3.10"  # Lock Python version
+  virtual_env: "venv"
+
+# =============================================================================
+# External Tools
+# =============================================================================
+tools:
+  # Experiment tracking
+  experiment_tracker:
+    type: "mlflow"  # Options: "mlflow", "wandb", "tensorboard"
+    server_uri: "http://localhost:5000"  # For MLflow
+    experiment_name: "sepsis-safe-rl"
+
+  # Version control
+  git:
+    repo_name: "sepsis-safe-offline-rl"
+    branch: "main"
+
+# =============================================================================
+# Data Management
+# =============================================================================
+data:
+  # Data root directory (relative to project root)
+  root_dir: "./data"
+
+  # Data split configuration
+  split:
+    train_size: 9000      # ~9k trajectories
+    val_size: 500         # ~0.5k trajectories
+    test_size: 500        # ~0.5k trajectories
+    total_size: 10000     # Total trajectories
+    random_state: 42      # For reproducible splits
+
+  # Test set protection
+  test_set:
+    sealed_after_phase: 0
+    unsealed_at_phase: 4
+    seal_file: "./data/.test_sealed"  # Marker file
+
+  # Preprocessing
+  preprocessing:
+    normalization: "standard"  # Options: "standard", "minmax", "robust"
+    missing_value_strategy: "forward_fill_then_mean"
+    outlier_handling: "clip_3std"  # Clip at ±3 standard deviations
+
+    # Feature engineering
+    add_time_features: true
+    add_delta_features: true  # Change from previous timestep
+
+# =============================================================================
+# Logging
+# =============================================================================
+logging:
+  level: "INFO"  # Options: "DEBUG", "INFO", "WARNING", "ERROR"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  log_dir: "./logs"
+
+  # Log files
+  files:
+    main: "main.log"
+    training: "training.log"
+    evaluation: "evaluation.log"
+    safety: "safety_interventions.log"
+
+# =============================================================================
+# Safety Configuration (High-level)
+# =============================================================================
+safety:
+  # L1: Semantic safety (hard constraints)
+  l1_enabled: true
+  l1_catalog_path: "./docs/safety_guidelines.md"
+
+  # L2: Cognitive safety (uncertainty/OOD)
+  l2_enabled: true
+
+  # Intervention logging
+  log_all_interventions: true
+  intervention_log_path: "./logs/safety_interventions.log"
+
+# =============================================================================
+# Experiment Reproducibility
+# =============================================================================
+reproducibility:
+  # Global seeds
+  numpy_seed: 42
+  torch_seed: 42
+  python_seed: 42
+
+  # Deterministic algorithms (may slow down training)
+  torch_deterministic: true
+  cudnn_deterministic: true
+  cudnn_benchmark: false
+
+  # Version locking (for documentation)
+  dependency_versions:
+    torch: "2.0.0"
+    numpy: "1.24.0"
+    d3rlpy: "2.0.0"
+    python: "3.10"
+
+# =============================================================================
+# Paths (relative to project root)
+# =============================================================================
+paths:
+  project_root: "."
+  data_root: "./data"
+  models_root: "./models"
+  results_root: "./results"
+  logs_root: "./logs"
+  config_root: "./config"
+  notebooks_root: "./notebooks"
+
+# =============================================================================
+# Development Settings
+# =============================================================================
+dev:
+  debug_mode: false
+  fast_dev_run: false  # Use small subset for quick iteration
+  checkpoint_frequency: 10  # Save every N epochs

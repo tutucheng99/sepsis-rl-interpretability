@@ -1,0 +1,204 @@
+% ============================================================
+% STAT 8289 Course Project - JASA Format
+% Title: Performance and Interpretability Trade-offs in
+%        Reinforcement Learning for Sepsis Treatment:
+%        Comparing Offline and Online Approaches
+% Authors: Zhiyu Cheng*, Yalun Ding, Chuanhui Peng (Equal contribution)
+%          *Corresponding author: zhiyu.cheng@email.gwu.edu
+% Date: October 2025
+% ============================================================
+
+\documentclass[11pt]{article}
+
+% ============================================================
+% PACKAGES
+% ============================================================
+\usepackage{amsmath,amssymb}
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp}
+\else
+  \usepackage{unicode-math}
+  \defaultfontfeatures{Scale=MatchLowercase}
+  \defaultfontfeatures[\rmfamily]{Ligatures=TeX,Scale=1}
+\fi
+\usepackage{lmodern}
+
+% Formatting
+\usepackage{ifthen}
+\IfFileExists{microtype.sty}{\usepackage[]{microtype}}{}
+\usepackage{xcolor}
+\setlength{\emergencystretch}{3em}
+\setcounter{secnumdepth}{5}
+
+% Tables and figures
+\usepackage{longtable,booktabs,array}
+\usepackage{calc}
+\usepackage{graphicx}
+\usepackage{subcaption}
+
+% Page layout (JASA format)
+\addtolength{\oddsidemargin}{-.5in}
+\addtolength{\evensidemargin}{-.1in}
+\addtolength{\textwidth}{1in}
+\addtolength{\textheight}{1.7in}
+\addtolength{\topmargin}{-1in}
+
+% Graphics
+\makeatletter
+\def\maxwidth{\ifdim\Gin@nat@width>\linewidth\linewidth\else\Gin@nat@width\fi}
+\def\maxheight{\ifdim\Gin@nat@height>\textheight\textheight\else\Gin@nat@height\fi}
+\makeatother
+\setkeys{Gin}{width=\maxwidth,height=\maxheight,keepaspectratio}
+\makeatletter
+\def\fps@figure{htbp}
+\makeatother
+
+% Bibliography
+\usepackage[]{natbib}
+\bibliographystyle{agsm}
+
+% Hyperlinks
+\usepackage{bookmark}
+\IfFileExists{xurl.sty}{\usepackage{xurl}}{}
+\urlstyle{same}
+\hypersetup{
+  pdftitle={Performance and Interpretability Trade-offs in Reinforcement Learning for Sepsis Treatment: Comparing Offline and Online Approaches},
+  pdfauthor={Zhiyu Cheng (corresponding), Yalun Ding, Chuanhui Peng},
+  pdfkeywords={Reinforcement Learning, Sepsis Treatment, Interpretability, Conservative Q-Learning, LEG Analysis, Offline RL, MIMIC-III, Sepsis-Associated Encephalopathy, AI in Neurology},
+  colorlinks=true,
+  linkcolor={blue},
+  filecolor={red},
+  citecolor={blue},
+  urlcolor={blue},
+  pdfcreator={LaTeX via pandoc}
+}
+
+% Custom commands
+\newcommand{\anon}{1}  % Set to 0 for anonymous version, 1 for author version
+
+% ============================================================
+% DOCUMENT START
+% ============================================================
+\begin{document}
+
+\def\spacingset#1{\renewcommand{\baselinestretch}{#1}\small\normalsize}
+\spacingset{1}
+
+% ============================================================
+% TITLE AND AUTHORS
+% ============================================================
+\if1\anon
+{
+  \title{\bf Performance and Interpretability Trade-offs in Reinforcement Learning for Sepsis Treatment: Comparing Offline and Online Approaches}
+  \author{
+    Zhiyu Cheng\thanks{Equal contribution. Authors listed alphabetically. The authors gratefully acknowledge the support of STAT 8289 - Reinforcement Learning course at George Washington University. This work uses the MIMIC-III database (Johnson et al., 2016) and builds upon the gym-sepsis environment (Raghu et al., 2017).}$^{1,*}$,
+    Yalun Ding$^{1}$,
+    Chuanhui Peng$^{1}$ \\
+    $^{1}$Department of Statistics, George Washington University \\
+    $^{*}$Corresponding author: zhiyu.cheng@email.gwu.edu
+  }
+  \maketitle
+} \fi
+
+\if0\anon
+{
+  \bigskip
+  \bigskip
+  \bigskip
+  \begin{center}
+    {\LARGE\bf Performance and Interpretability Trade-offs in Reinforcement Learning for Sepsis Treatment: Comparing Offline and Online Approaches}
+\end{center}
+  \medskip
+} \fi
+
+% ============================================================
+% ABSTRACT
+% ============================================================
+\bigskip
+\begin{abstract}
+Sepsis remains a leading cause of mortality in critical care and a major contributor to long-term neurological morbidity, with survivors facing elevated risks of sepsis-associated encephalopathy, cognitive impairment, and accelerated neurodegenerative disease progression including Alzheimer's disease. Reinforcement learning (RL) offers a promising route to data-driven treatment policies that could optimize both acute survival and long-term neurological outcomes. Yet clinical adoption is impeded by the prevailing assumption that interpretability inevitably compromises performance, and that online RL methods necessarily outperform offline approaches. We interrogate these trade-offs by comparing three offline RL methods (Behavior Cloning, Conservative Q-Learning, and Deep Q-Network trained on static datasets) with three online RL methods (Double DQN with Attention, Double DQN with Residual connections, and Soft Actor-Critic with environment interaction) using the gym-sepsis simulator—a MIMIC-III–derived environment for sepsis treatment. Policy quality is assessed through patient-survival rates stratified by Sequential Organ Failure Assessment (SOFA) states, while interpretability is quantified with Linearly Estimated Gradients (LEG), a model-agnostic feature-importance method.
+
+Across 500 evaluation episodes, online RL achieves marginally higher overall survival (95.4\% for DDQN-Attention vs. 94.0\% for CQL), with a 2.0 percentage point advantage on high-severity patients (90.5\% vs. 88.5\%). However, comprehensive LEG analysis across all six algorithms reveals a measurable performance-interpretability trade-off: CQL achieves maximum saliency of 40.06 (excellent interpretability with clinically coherent emphasis on blood pressure and lactate), online methods achieve 1.17--3.57 (moderate interpretability), and vanilla DQN achieves only 0.069 (poor interpretability)—spanning three orders of magnitude. Critically, DDQN-Attention's 1.4 percentage point survival advantage over CQL comes at an 11-fold loss in interpretability (3.57 vs. 40.06), demonstrating that the modest performance gain requires sacrificing explainability and incurring extensive environment interaction during training—both infeasible in clinical settings where patient safety and regulatory approval demand transparent decision logic. These results challenge the assumption that interpretability inevitably compromises performance, showing instead that conservative offline RL (CQL) offers the optimal balance for clinical deployment: competitive survival rates with superior explainability and no patient risk during training.
+\end{abstract}
+
+\noindent%
+{\it Keywords:} Reinforcement Learning, Sepsis Treatment, Interpretability, Conservative Q-Learning, LEG Analysis, Offline RL, MIMIC-III, Sepsis-Associated Encephalopathy, Neurological Outcomes, Blood-Brain Barrier, AI in Neurology
+
+\vfill
+\newpage
+\spacingset{1} % Single line spacing for 25-page limit
+
+% ============================================================
+% 1. INTRODUCTION
+% ============================================================
+\input{sections/01_introduction.tex}
+
+
+% ============================================================
+% 2. RELATED WORK
+% ============================================================
+\input{sections/02_related.tex}
+
+
+% ============================================================
+% 3. PROBLEM FORMULATION
+% ============================================================
+\input{sections/03_problem.tex}
+
+
+% ============================================================
+% 4. METHODS
+% ============================================================
+\input{sections/04_methods.tex}
+
+
+% ============================================================
+% 5. RESULTS
+% ============================================================
+\input{sections/05_results.tex}
+
+
+% ============================================================
+% 6. DISCUSSION
+% ============================================================
+\input{sections/06_discussion.tex}
+
+
+% ============================================================
+% 7. CONCLUSION
+% ============================================================
+\input{sections/07_conclusion.tex}
+
+
+% ============================================================
+% AUTHOR CONTRIBUTIONS
+% ============================================================
+\section{Author Contributions}
+\input{sections/08_contributions.tex}
+
+
+% ============================================================
+% DISCLOSURE & DATA AVAILABILITY
+% ============================================================
+\section{Disclosure Statement}
+
+The authors declare no conflicts of interest.
+
+\section{Data Availability Statement}
+
+This study uses the MIMIC-III database \citep{johnson2016mimic3} and the gym-sepsis simulation environment (\url{https://github.com/gefeilin/gym-sepsis/tree/main/gym_sepsis/envs}). Code and data for replication are available at \url{https://github.com/tutucheng99/sepsis-rl-interpretability}.
+
+% ============================================================
+% APPENDIX
+% ============================================================
+\input{sections/09_appendix.tex}
+
+% ============================================================
+% REFERENCES
+% ============================================================
+\bibliography{references.bib}
+
+\end{document}

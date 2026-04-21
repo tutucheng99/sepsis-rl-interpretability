@@ -1,0 +1,511 @@
+# Experiment Configuration for Sepsis Safe Offline RL
+
+# =============================================================================
+# Phase -1: Data Audit Configuration
+# =============================================================================
+phase_minus_1:
+  # Behavioral policy estimation
+  behavior_policy:
+    model_type: "gradient_boosting"  # Options: "gradient_boosting", "neural_net", "random_forest"
+    hyperparameters:
+      n_estimators: 100
+      max_depth: 5
+      learning_rate: 0.1
+      random_state: 42
+
+  # Overlap analysis
+  overlap:
+    min_propensity_threshold: 0.01  # Flag regions with P(a|s) < 0.01
+    low_overlap_percentile: 5       # Bottom 5% of propensity scores
+
+  # Causal analysis
+  causal:
+    # Sensitivity analysis method
+    method: "e_value"  # Options: "e_value", "rosenbaum_bounds"
+    e_value_threshold: 2.0  # Minimum E-value for robustness
+
+  # Fairness audit
+  fairness:
+    # Stratification variables
+    strata:
+      - name: "age"
+        bins: [18, 40, 60, 75, 100]
+        labels: ["young", "middle", "senior", "elderly"]
+      - name: "gender"
+        categories: ["M", "F"]
+      - name: "baseline_sofa"
+        bins: [0, 6, 11, 24]
+        labels: ["low", "medium", "high"]
+
+    # Minimum sample size per stratum
+    min_samples_per_stratum: 50
+
+  # Stitchability
+  stitchability:
+    n_clusters: 5  # Number of behavioral clusters
+    min_overlap_score: 0.7
+
+# =============================================================================
+# Phase R: Reward Design Configuration
+# =============================================================================
+phase_r:
+  # System A: Training reward
+  system_a:
+    # Reward components
+    components:
+      # R_phys: Physiological reward
+      r_phys:
+        enabled: true
+        targets:
+          - feature: "MAP"
+            target_value: 65
+            weight: 1.0
+            shaping: "sigmoid"
+            shaping_params:
+              scale: 5  # Sigmoid steepness
+
+          - feature: "lactate"
+            target_direction: "decrease"
+            weight: 0.8
+            shaping: "linear"
+
+          - feature: "sofa_score"
+            target_direction: "decrease"
+            weight: 0.6
+            shaping: "linear"
+
+      # Smoothness penalty
+      smoothness:
+        enabled: true
+        weight_range: [0.01, 0.2]
+        norm: "l1"  # Options: "l1", "l2"
+
+      # Risk penalty
+      risk:
+        enabled: true
+        weight_range: [0.1, 1.0]
+        high_risk_conditions:
+          - condition: "MAP < 55"
+            penalty: 1.0
+          - condition: "norepinephrine > 0.5"
+            penalty: 0.8
+
+      # Saturation suppression
+      saturation:
+        enabled: true
+        futility_threshold: 0.9  # P(death|state) > 0.9
+
+    # Weight search
+    weight_search:
+      method: "grid"  # Options: "grid", "random", "bayesian"
+      search_space:
+        w1: [0.5, 1.0, 2.0]      # R_phys weight
+        w2: [0.01, 0.05, 0.2]    # Smoothness weight
+        w3: [0.1, 0.5, 1.0]      # Risk weight
+      n_trials: 27  # For grid search: 3 × 3 × 3
+
+  # System B: Evaluation metrics
+  system_b:
+    metrics:
+      # Primary outcome
+      primary:
+        - name: "survival_90day"
+          weight: 1.0
+
+      # Secondary outcomes
+      secondary:
+        - name: "icu_length_of_stay"
+          direction: "minimize"
+        - name: "survival_28day"
+
+      # Process safety indicators
+      safety:
+        - name: "vasopressor_exposure"
+          aggregation: "sum"
+        - name: "fluid_overload"
+          aggregation: "max"
+        - name: "aki_episodes"
+          aggregation: "count"
+        - name: "hypotension_episodes"
+          threshold: "MAP < 65 for > 1hr"
+
+  # Consistency validation
+  consistency:
+    min_spearman_correlation: 0.7
+    min_pearson_correlation: 0.6
+    max_rank_disagreement_rate: 0.2
+
+# =============================================================================
+# Phase 0: Baseline Configuration
+# =============================================================================
+phase_0:
+  # Baseline algorithms
+  baselines:
+    - name: "BC"
+      type: "behavioral_cloning"
+      model:
+        hidden_dims: [256, 256]
+        activation: "relu"
+        dropout: 0.1
+
+    - name: "CQL"
+      type: "conservative_q_learning"
+      alpha: 1.0  # Fixed conservatism
+      model:
+        hidden_dims: [256, 256]
+        activation: "relu"
+
+  # OPE configuration
+  ope:
+    methods:
+      - name: "FQE"
+        primary: true
+        hyperparameters:
+          n_iterations: 100
+          learning_rate: 0.0003
+
+      - name: "WIS"
+        hyperparameters:
+          clip_ratio: 10.0
+
+      - name: "DR"
+        hyperparameters:
+          clip_ratio: 10.0
+
+    # Reliability thresholds
+    reliability:
+      min_ess: 50              # Minimum effective sample size
+      max_weight_variance: 10  # Maximum weight variance for WIS
+
+  # Training configuration
+  training:
+    n_epochs: 100
+    batch_size: 256
+    learning_rate: 0.0003
+    optimizer: "adam"
+    random_seeds: [42, 123, 456, 789, 1011]  # Multiple seeds for robustness
+
+# =============================================================================
+# Phase 1: Safety Layer Configuration
+# =============================================================================
+phase_1:
+  # L1: Semantic safety
+  l1_semantic:
+    # Hard contraindications (examples)
+    hard_constraints:
+      - rule: "if MAP < 50 then vasopressor_level >= 2"
+        description: "Severe hypotension requires vasopressors"
+
+      - rule: "if vasopressor_level == 4 and fluid_level == 0 then BLOCK"
+        description: "High vasopressors without fluids is contraindicated"
+
+      - rule: "if creatinine > 3.0 then fluid_level <= 2"
+        description: "Renal dysfunction limits fluid administration"
+
+    # Dosage boundaries
+    dose_limits:
+      norepinephrine_max: 0.5  # mcg/kg/min
+      fluid_max_per_step: 2000  # mL
+
+  # L2: Cognitive safety
+  l2_cognitive:
+    # OOD detection
+    ood_detector:
+      method: "isolation_forest"  # Options: "isolation_forest", "lof", "ensemble"
+      contamination: 0.1
+      threshold_percentile: 95  # δ set at 95th percentile
+
+    # Risk proxy models
+    risk_models:
+      - name: "delta_sofa_predictor"
+        target: "sofa_increase"
+        model_type: "logistic_regression"
+        calibration: "isotonic"
+
+      - name: "sustained_hypotension_predictor"
+        target: "MAP_below_65_next_2steps"
+        model_type: "gradient_boosting"
+        calibration: "platt"
+
+    # Thresholds (to be set on validation set)
+    thresholds:
+      delta: null  # OOD threshold (to be determined)
+      kappa: null  # U_del threshold (to be determined)
+
+# =============================================================================
+# Phase 2-3: Core Algorithm Configuration
+# =============================================================================
+phase_2_3:
+  # RF-CQL configuration
+  rf_cql:
+    # Adaptive conservatism
+    adaptive_alpha:
+      alpha_0: 1.0             # Base conservatism (search space: [0.1, 0.5, 1.0, 2.0])
+      gamma_adapt: 1.0         # OOD scaling (search space: [0.5, 1.0, 2.0])
+      formula: "alpha_0 + gamma_adapt * OOD(s)"
+
+    # CQL hyperparameters
+    cql:
+      alpha: 1.0
+      tau: 0.005  # Target network update rate
+      gamma: 0.99  # Discount factor
+
+    # Network architecture
+    network:
+      hidden_dims: [256, 256, 128]
+      activation: "relu"
+      dropout: 0.1
+      layer_norm: true
+
+  # Filtered-MDP
+  filtered_mdp:
+    enabled: true
+    apply_mask_in_training: true  # CRITICAL: Must be true!
+    mask_source: "l1_semantic"    # Use L1 layer for masking
+
+  # Inference arbiter
+  inference:
+    fallback_policy: "behavioral_nn"  # Options: "behavioral_nn", "bc_conservative", "human"
+    log_interventions: true
+
+  # Training
+  training:
+    n_epochs: 200
+    batch_size: 256
+    learning_rate: 0.0003
+    optimizer: "adam"
+    scheduler: "cosine"
+    early_stopping:
+      patience: 20
+      metric: "fqe_val"
+      mode: "max"
+
+    # Multiple seeds for robustness
+    random_seeds: [42, 123, 456, 789, 1011]
+
+  # Hyperparameter search
+  hyperparam_search:
+    method: "grid"  # Options: "grid", "random", "bayesian"
+    search_space:
+      alpha_0: [0.1, 0.5, 1.0, 2.0]
+      gamma_adapt: [0.5, 1.0, 2.0]
+      delta: [0.05, 0.1, 0.2]
+      kappa: [0.1, 0.3, 0.5]
+    n_trials: 72  # 4 × 3 × 3 × 3
+
+  # Model selection
+  model_selection:
+    # Pessimization
+    pessimization:
+      beta: 0.5  # Pessimism strength
+      use_for_selection_only: true  # NOT for training gradients
+
+    # Pareto frontier
+    pareto:
+      dimensions:
+        - name: "performance"
+          metric: "fqe_val"
+          direction: "maximize"
+          weight: 1.0
+
+        - name: "safety"
+          metric: "weighted_safety_score"
+          components:
+            - metric: "l1_violation_rate"
+              weight: 10.0  # Hard violations heavily penalized
+            - metric: "l2_intervention_rate"
+              weight: 0.5
+          direction: "minimize"
+
+        - name: "interpretability"
+          metric: "leg_stability"
+          direction: "maximize"
+          weight: 0.5
+
+      n_candidates: 5  # Select top 5 Pareto-optimal policies
+
+# =============================================================================
+# Phase 4: Main Evaluation Configuration
+# =============================================================================
+phase_4:
+  # Unseal test set
+  unseal_test_set: true
+
+  # Evaluation dimensions
+  evaluation:
+    # H1: Efficacy & Safety
+    efficacy_safety:
+      # Subgroup analysis
+      subgroups:
+        - name: "overall"
+        - name: "high_risk"
+          filter: "baseline_sofa >= 11"
+
+      # Statistical reporting
+      statistics:
+        confidence_interval: 0.95
+        ci_method: "wilson"
+        significance_test: "permutation"
+        effect_size: "cohen_d"
+        multiple_comparison_correction: "bh_fdr"  # Benjamini-Hochberg
+
+      # Safety red lines
+      red_lines:
+        hard_contraindication_violation_rate:
+          threshold: 0.001  # ≈ 0 (must pass!)
+          critical: true
+
+    # H2: Interpretability
+    interpretability:
+      methods:
+        - name: "LEG"
+          top_k: 5
+        - name: "SHAP"
+          top_k: 5
+
+      stability_metrics:
+        - "jaccard_similarity"
+        - "rank_correlation"
+
+      clinical_consistency:
+        expected_top_features: ["MAP", "lactate", "SOFA", "vasopressor_last"]
+
+      # Policy card generation
+      policy_card:
+        enabled: true
+        include_case_reviews: true
+        n_case_reviews: 10
+
+    # H4: Fairness
+    fairness:
+      strata:
+        - name: "age"
+          bins: [18, 40, 60, 75, 100]
+        - name: "gender"
+        - name: "baseline_sofa"
+          bins: [0, 6, 11, 24]
+
+      metrics:
+        - "performance_disparity"
+        - "safety_disparity"
+        - "intervention_rate_disparity"
+
+      threshold:
+        max_disparity: 0.2  # 20% difference between groups
+
+    # Shadow evaluation
+    shadow:
+      enabled: true
+      metrics:
+        - "clinician_disagreement_rate"
+        - "temporal_stability"
+        - "ood_frequency"
+        - "intervention_rate"
+
+  # Reporting
+  reporting:
+    generate_comprehensive_report: true
+    output_format: ["pdf", "html", "markdown"]
+    include_visualizations: true
+
+# =============================================================================
+# Phase 5-6: Robustness Configuration
+# =============================================================================
+phase_5_6:
+  # Ablation studies
+  ablation:
+    algorithm_layer:
+      - name: "RF-CQL vs Standard CQL"
+        compare: ["rf_cql", "cql_fixed_alpha"]
+      - name: "RF-CQL vs Post-hoc filtering"
+        compare: ["rf_cql", "cql_posthoc_filter"]
+      - name: "RF-CQL vs BC"
+        compare: ["rf_cql", "bc"]
+
+    safety_layer:
+      - ablate: "l1_filtering"
+      - ablate: "l2_gating"
+      - ablate: "u_del_pessimization"
+
+    reward_layer:
+      - ablate: "smoothness_penalty"
+      - ablate: "risk_penalty"
+
+  # Sensitivity analysis
+  sensitivity:
+    parameters:
+      - name: "alpha_0"
+        values: [0.05, 0.1, 0.5, 1.0, 2.0, 5.0]
+      - name: "gamma_adapt"
+        values: [0.0, 0.5, 1.0, 2.0, 5.0]
+      - name: "delta"
+        values: [0.01, 0.05, 0.1, 0.2, 0.5]
+      - name: "kappa"
+        values: [0.05, 0.1, 0.3, 0.5, 1.0]
+      - name: "beta"
+        values: [0.0, 0.1, 0.5, 1.0, 2.0]
+      - name: "reward_weights"
+        # Vary w1, w2, w3 independently
+
+    # Robustness tests
+    robustness:
+      - test: "feature_noise"
+        noise_levels: [0.01, 0.05, 0.1, 0.2]
+
+      - test: "missing_data"
+        missing_rates: [0.05, 0.1, 0.2, 0.3]
+
+      - test: "temporal_drift"
+        shift_magnitude: [0.1, 0.2, 0.5]
+
+    # Failure analysis
+    failure_analysis:
+      report_failure_cases: true
+      n_worst_cases: 20
+
+# =============================================================================
+# Phase 7-9: Deployment Configuration
+# =============================================================================
+phase_7_9:
+  # Shadow mode
+  shadow_mode:
+    duration_weeks: 12  # 3 months
+    monitoring_frequency: "daily"
+
+    # Shutdown thresholds
+    shutdown_criteria:
+      - metric: "hard_violation_rate"
+        threshold: 0.005
+        action: "immediate_shutdown"
+
+      - metric: "clinician_override_rate"
+        threshold: 0.5
+        action: "escalate_review"
+
+  # Prospective trial
+  prospective_trial:
+    design: "PCCP"  # Prospective Clinical Comparison Protocol
+    hitl: true      # Human-in-the-loop
+    sample_size: null  # To be determined by power analysis
+
+# =============================================================================
+# Global Settings
+# =============================================================================
+global:
+  # Experiment name
+  experiment_name: "sepsis_safe_rl_v1"
+
+  # Checkpointing
+  checkpoint:
+    save_frequency: 10  # epochs
+    keep_top_k: 3
+    metric: "fqe_val"
+
+  # Logging
+  logging:
+    log_frequency: 1  # Log every epoch
+    log_gradients: false
+    log_weights: false
+
+  # Reproducibility
+  random_seed: 42

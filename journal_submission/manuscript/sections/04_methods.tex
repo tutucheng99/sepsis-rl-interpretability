@@ -1,0 +1,213 @@
+% ============================================================
+% METHODS SECTION
+% ============================================================
+
+\section{Methods}\label{sec:methods}
+
+We describe the experimental setup: the gym-sepsis simulation environment, offline and online RL algorithms, LEG interpretability analysis, and evaluation protocol.
+
+% ============================================================
+\subsection{Environment and Data}\label{sec:methods:env}
+
+\subsubsection{Gym-Sepsis Simulator}
+
+We use Gym-Sepsis \citep{raghu2017sepsis_drl}, an RL simulator for ICU sepsis treatment trained on MIMIC-III data \citep{johnson2016mimic3}.
+
+\textbf{State Space.} At each timestep, the state is a 46-dimensional vector spanning laboratory values (lactate, creatinine, platelet count, etc.), vital signs (blood pressure, heart rate, SpO$_2$, etc.), demographics (age, gender, race), clinical severity scores (SOFA, LODS, SIRS, qSOFA, Elixhauser), and treatment status (mechanical ventilation, blood culture). The SOFA score \citep{vincent1996sofa} ranges from 0--24, with higher values indicating greater organ dysfunction; we use SOFA for severity stratification in Section~\ref{sec:methods:eval}.
+
+\textbf{Action Space.} A discrete action space with 24 actions (indexed 0--23) derived from a $5 \times 5$ grid over IV fluid and vasopressor dosage bins. The environment implements the mapping $a = \min(5 \times \text{IV\_bin} + \text{VP\_bin}, 23)$, where IV\_bin, VP\_bin $\in \{0, 1, 2, 3, 4\}$, effectively capping the maximum combined dosage at action 23.
+
+\textbf{Episode Dynamics \& Reward.} Episodes span ICU stays (4-hour timesteps) until discharge or death. Sparse reward: $r_t = +15$ (survival), $-15$ (death), $0$ (intermediate).
+
+\subsubsection{Offline Training Dataset}
+
+We generated an offline dataset of 2,105 episodes (~20K transitions) using a heuristic policy based on clinical guidelines \citep{rhodes2017ssc, seymour2017sepsis_criteria}, achieving 94.6\% survival. All episodes were used for training without held-out validation or test sets from the offline data; performance evaluation was conducted by running trained policies on 500 newly sampled episodes in the gym-sepsis simulator (see Section~\ref{sec:methods:baselines}).
+
+% ============================================================
+\subsection{Algorithms}\label{sec:methods:algos}
+
+We compare three offline RL algorithms representing different learning paradigms: Behavior Cloning (supervised learning), Conservative Q-Learning (offline Q-learning), and Deep Q-Network (online RL adapted for offline evaluation). All algorithms use the same neural network architecture for fair comparison: a 3-layer multilayer perceptron (MLP) with hidden dimensions [256, 256, 128] and ReLU activations.
+
+\subsubsection{Behavior Cloning (BC)}
+
+Behavior Cloning treats offline RL as a supervised learning problem, training a policy to imitate the behavioral policy by minimizing the negative log-likelihood of observed actions \citep{pomerleau1991bc}. Formally, given a dataset $\mathcal{D} = \{(s_i, a_i)\}_{i=1}^N$ of state-action pairs, BC learns a policy $\pi_{\theta}(a|s)$ by solving:
+\begin{equation}
+\theta^* = \arg\min_{\theta} -\frac{1}{N} \sum_{i=1}^N \log \pi_{\theta}(a_i | s_i)
+\end{equation}
+
+BC is computationally efficient and stable, but suffers from distribution shift when the learned policy encounters states not well-represented in the offline dataset \citep{ross2010dagger}.
+
+\textbf{Implementation.} We use d3rlpy's DiscreteBCConfig with batch size 1,024, learning rate $1 \times 10^{-3}$ (Adam), training for 50,000 gradient steps (10 epochs $\times$ 5,000 steps/epoch).
+
+\subsubsection{Conservative Q-Learning (CQL)}
+
+Conservative Q-Learning \citep{kumar2020cql} is an offline RL algorithm that learns a conservative Q-function to avoid overestimation on out-of-distribution actions. CQL augments the standard Bellman error with a conservatism penalty that pushes down Q-values for unseen actions while pushing up Q-values for actions in the dataset:
+\begin{equation}
+\min_Q \alpha \cdot \mathbb{E}_{s \sim \mathcal{D}} \left[ \log \sum_a \exp Q(s, a) - \mathbb{E}_{a \sim \pi_\beta} Q(s, a) \right] + \frac{1}{2} \mathbb{E}_{(s,a,r,s') \sim \mathcal{D}} \left[ (Q(s,a) - \mathcal{T}^\pi Q(s,a))^2 \right]
+\end{equation}
+where $\alpha$ controls the strength of the conservatism penalty, $\pi_\beta$ is the behavioral policy, and $\mathcal{T}^\pi$ is the Bellman operator.
+
+The conservatism penalty encourages the learned Q-function to assign lower values to actions that were not taken by the behavioral policy, reducing the risk of selecting suboptimal actions due to Q-value overestimation. The policy is derived as $\pi(s) = \arg\max_a Q(s, a)$.
+
+\textbf{Implementation.} We use d3rlpy's DiscreteCQLConfig with batch size 1,024, learning rate $3 \times 10^{-4}$ (Adam), $\alpha = 1.0$, target network updates every 2,000 steps, training for 200,000 gradient steps.
+
+\subsubsection{Deep Q-Network (DQN)}
+
+Deep Q-Network \citep{mnih2015dqn} is a foundational deep RL algorithm that combines Q-learning with deep neural networks. DQN uses two key techniques for stability: (1) experience replay, which stores transitions in a replay buffer and samples mini-batches for training, and (2) a target network $Q_{\theta^-}$ that is periodically synchronized with the main network $Q_\theta$ to stabilize Q-value targets.
+
+The Q-function is updated to minimize the temporal difference (TD) error:
+\begin{equation}
+\mathcal{L}(\theta) = \mathbb{E}_{(s,a,r,s') \sim \mathcal{D}} \left[ \left( Q_\theta(s,a) - \left( r + \gamma \max_{a'} Q_{\theta^-}(s', a') \right) \right)^2 \right]
+\end{equation}
+
+The policy is derived greedily as $\pi(s) = \arg\max_a Q_\theta(s, a)$, with $\epsilon$-greedy exploration during training ($\epsilon$ annealed from 1.0 to 0.05).
+
+\textbf{Implementation and Training Paradigm.} We use the Stable-Baselines3 library for DQN training. Unlike BC and CQL (which train offline on the fixed 2,105-episode dataset), DQN was trained \textit{online} by interacting with the Gym-Sepsis simulator and accumulating experience in a replay buffer of size 100,000. This reflects DQN's original design as an online RL algorithm \citep{mnih2015dqn}. We include DQN as a \textit{foundational baseline} representing vanilla Q-learning without offline-specific modifications (CQL's conservatism penalty) or architectural innovations (attention mechanisms, residual connections in DDQN variants). This creates a hybrid methodological status: DQN is trained online (like DDQN-Attention/Residual and SAC) but lacks their architectural enhancements, while being evaluated offline (like BC and CQL) without their offline training safeguards. Section~\ref{sec:discussion:limitations} discusses the implications of this design choice for interpreting DQN's results. All algorithms are evaluated identically on 500 newly sampled episodes from the gym-sepsis simulator (distinct from the 2,105 training episodes) without further policy updates, ensuring fair performance and interpretability comparison at deployment time.
+
+DQN uses batch size 256, learning rate $1 \times 10^{-4}$ (Adam), target network updates every 1,000 steps, $\epsilon$-greedy exploration (1.0 $\to$ 0.05), training for 100,000 timesteps.
+
+\subsubsection{Online RL Algorithms}\label{sec:methods:algos:online}
+
+To provide a comprehensive comparison between offline and online RL paradigms, we also evaluate three state-of-the-art online RL algorithms with architectural innovations (implemented by collaborator Y. Ding). Unlike the offline methods above, these algorithms train by interacting with the Gym-Sepsis simulator, collecting 1 million timesteps of experience through exploration. This comparison illuminates the performance-safety trade-off: online methods can explore beyond the behavioral policy's distribution but require environment access during training—a significant constraint in clinical settings where patient safety prohibits trial-and-error learning.
+
+\paragraph{Double DQN with Attention (DDQN-Attention).}
+This algorithm extends Double DQN \citep{vanHasselt2016double_dqn} with a multi-head self-attention mechanism in the encoder network. Double DQN addresses Q-value overestimation by decoupling action selection and evaluation: the main network selects the best action, while the target network evaluates it. The attention layer allows the model to dynamically weight different state features based on their relevance to the current decision:
+\begin{equation}
+h_t = \text{MultiHeadAttention}(s_t, s_t, s_t) + s_t
+\end{equation}
+where the residual connection helps gradient flow during backpropagation. The attention mechanism computes scaled dot-product attention across 4 parallel heads, each learning different feature correlations. The encoder uses two hidden layers of 256 and 128 units respectively, with the attention layer inserted after the first hidden layer to capture high-level feature interactions.
+
+\paragraph{Double DQN with Residual Connections (DDQN-Residual).}
+This variant incorporates deep residual networks \citep{he2016deep} to enable training of deeper Q-networks without gradient vanishing. The architecture uses three hidden layers of 256 units each, with skip connections between layers:
+\begin{equation}
+h_{l+1} = \sigma(\text{LayerNorm}(W_l h_l + b_l + h_l))
+\end{equation}
+where $\sigma$ is the ReLU activation, $W_l$ and $b_l$ are learnable weights and biases, and the additive skip connection $h_l$ preserves gradient information. Layer normalization stabilizes training by normalizing activations within each layer. The residual architecture is hypothesized to learn more complex value functions by decomposing Q-value estimation into a base value plus incremental adjustments.
+
+\paragraph{Soft Actor-Critic (SAC).}
+SAC \citep{haarnoja2018soft} is a maximum entropy RL algorithm that optimizes both expected return and policy entropy, encouraging exploration and robustness. The objective function is:
+\begin{equation}
+J(\pi) = \mathbb{E}_{\tau \sim \pi}\left[\sum_t r(s_t, a_t) + \alpha \mathcal{H}(\pi(\cdot|s_t))\right]
+\end{equation}
+where $\mathcal{H}(\pi(\cdot|s))$ is the entropy of the policy at state $s$, and $\alpha$ is a temperature parameter that balances exploitation (maximizing reward) and exploration (maximizing entropy). We use the discrete action space variant of SAC with a residual encoder architecture (3 layers of 256 units with skip connections). The temperature $\alpha$ is automatically tuned during training using a dual gradient descent approach \citep{haarnoja2018soft_applications}, starting from $\alpha = 0.2$ and adjusting to maintain a target entropy equal to 95\% of the maximum entropy $\log(24)$ for the 24-action space.
+
+\paragraph{Training Details.}
+All three online RL algorithms were trained with 1,000,000 environment interaction steps using experience replay buffers of size 100,000. Training used batch size 256, learning rate $3 \times 10^{-4}$ (Adam), and target network soft updates with $\tau = 0.005$. Exploration for DDQN variants used $\epsilon$-greedy with $\epsilon$ annealed from 1.0 to 0.05 over the first 100,000 steps. Unlike offline methods which require only the pre-collected dataset, these algorithms necessitate access to the simulator during training—a key distinction when considering deployment in clinical settings where patient safety prohibits exploratory interventions.
+
+% ============================================================
+\subsection{LEG Interpretability Analysis}\label{sec:methods:leg}
+
+To assess interpretability, we employ Linearly Estimated Gradients (LEG) \citep{greydanus2018leg}, a model-agnostic perturbation-based method for computing feature importance in RL policies. LEG approximates the policy gradient $\nabla_s Q(s_0, \pi(s_0))$ with respect to state features by locally linearizing the Q-function around a reference state $s_0$, enabling identification of which physiological features (e.g., blood pressure, lactate) most strongly influence treatment decisions.
+
+\subsubsection{LEG Algorithm}
+
+Given a state $s_0 \in \mathbb{R}^{46}$ and a learned policy $\pi$ (derived from Q-function $Q(s,a)$ as $\pi(s) = \arg\max_a Q(s,a)$), LEG estimates the saliency vector $\hat{\gamma} \in \mathbb{R}^{46}$ through the following procedure:
+
+\textbf{Step 1: Perturbation Sampling.} Generate $n = 1{,}000$ random perturbations $Z_i \sim \mathcal{N}(0, \sigma^2 I)$ with $\sigma = 0.1$, producing perturbed states:
+\begin{equation}
+s_i = s_0 + Z_i, \quad i = 1, \ldots, n
+\end{equation}
+We apply perturbations only to continuous features, excluding categorical variables (gender, race) to prevent semantically invalid states. Perturbed values are clipped to physiologically plausible ranges when domain knowledge is available (e.g., systolic blood pressure $\in [50, 250]$ mmHg).
+
+\textbf{Step 2: Q-Value Evaluation.} For each perturbed state $s_i$ and the selected action $a_0 = \pi(s_0)$, compute the Q-value change:
+\begin{equation}
+\hat{y}_i = Q(s_i, a_0) - Q(s_0, a_0)
+\end{equation}
+This measures how perturbations affect the expected return when following the policy's chosen action, capturing the Q-function's sensitivity to each feature.
+
+\textbf{Step 3: Ridge Regression.} Compute the sample covariance matrix of perturbations and add ridge regularization for numerical stability:
+\begin{equation}
+\Sigma = \frac{1}{n} Z^\top Z + \lambda I, \quad \lambda = 10^{-6}
+\end{equation}
+where $Z \in \mathbb{R}^{n \times 46}$ is the matrix of all perturbations. The ridge term prevents singularity when features are correlated (common in medical data).
+
+\textbf{Step 4: Gradient Estimation.} Estimate the saliency vector via the closed-form ridge regression solution:
+\begin{equation}
+\hat{\gamma} = \Sigma^{-1} \left( \frac{1}{n} \sum_{i=1}^n \hat{y}_i Z_i \right) = \Sigma^{-1} \left( \frac{1}{n} Z^\top \hat{y} \right)
+\end{equation}
+where $\hat{y} = [\hat{y}_1, \ldots, \hat{y}_n]^\top$. Each element $\hat{\gamma}_j$ quantifies the marginal contribution of feature $j$ to the Q-value: positive values indicate that increasing the feature increases expected return, while negative values suggest the opposite.
+
+\subsubsection{State Selection and Analysis Protocol}
+
+We apply LEG to all six algorithms (BC, CQL, DQN, DDQN-Attention, DDQN-Residual, SAC) using identical parameters for fair comparison. For each algorithm, we analyze $n_{\text{states}} = 10$ representative states sampled from the gym-sepsis environment via \texttt{env.reset()}, ensuring coverage across SOFA severity levels (low: SOFA $\leq$ 5, medium: 6--10, high: $\geq$ 11). This sampling strategy captures policy behavior across clinically diverse patient conditions, from stable patients (low SOFA) to critically ill cases (high SOFA) where treatment decisions are most consequential.
+
+For each state-action pair, we compute saliency scores for all 24 actions, enabling action-specific interpretability analysis. We focus primarily on the selected action $a_0 = \pi(s_0)$ to understand the policy's actual decision-making rationale, but also examine alternative actions to identify features that differentiate treatment intensities.
+
+\subsubsection{Interpretability Metrics and Justification}
+
+We quantify interpretability using three complementary metrics:
+
+\textbf{(1) Maximum Saliency Magnitude.} The absolute value of the largest saliency score, $\max_j |\hat{\gamma}_j|$, measuring whether any single feature exerts dominant influence on the Q-function. High values indicate threshold-based decision logic that clinicians can validate (e.g., ``escalate vasopressors when mean arterial pressure drops below 65 mmHg''). Algorithms with strong max saliency (e.g., CQL: 40.06 for systolic blood pressure) exhibit interpretable, feature-driven decision rules, while algorithms with weak signals (e.g., DQN: 0.069) rely on distributed, opaque representations unsuitable for clinical explanation.
+
+\textbf{(2) Saliency Range.} The difference between maximum and minimum saliency scores, indicating how concentrated importance is across features. Large ranges suggest policies rely on a small set of critical features rather than uniformly weak signals. Combined with max saliency, this metric distinguishes truly interpretable policies (high magnitude, large range) from uniformly flat policies (low magnitude, small range).
+
+\textbf{(3) Clinical Coherence.} Qualitative assessment of whether top-ranked features align with established medical knowledge. We compare LEG-identified important features against Surviving Sepsis Campaign guidelines \citep{rhodes2017ssc}, which emphasize hemodynamic markers (blood pressure, lactate) for sepsis resuscitation. Algorithms achieving high clinical coherence (e.g., CQL prioritizing SysBP, MeanBP, lactate) are more likely to gain clinician trust than those emphasizing obscure or clinically irrelevant features.
+
+\textbf{Limitations and Scope.} We acknowledge that these metrics provide \textit{necessary but not sufficient} conditions for clinical interpretability. High saliency magnitude indicates strong feature dependence, but does not guarantee that the learned decision rule is medically correct or that clinicians will trust it in practice. Alternative interpretability methods (SHAP values for feature interactions, integrated gradients for neural network attributions, attention weight visualization for transformer architectures, human evaluation studies with domain experts) could provide complementary evidence. However, LEG's model-agnostic nature enables fair comparison across algorithms with different architectures (value-based vs. policy-based, attention-augmented vs. residual networks), and its gradient-based approach aligns with how clinicians reason about physiological thresholds and dose-response relationships. We view our LEG analysis as a \textit{comparative benchmark}---algorithms with stronger, more clinically coherent saliency patterns are more \textit{likely} to be interpretable and trustworthy, though prospective validation with clinicians (via think-aloud protocols, counterfactual reasoning tasks, and deployment pilots) is required before clinical adoption.
+
+% ============================================================
+\subsection{Evaluation Metrics}\label{sec:methods:eval}
+
+We evaluate algorithm performance using outcome-based and severity-stratified metrics that reflect both treatment efficacy and clinical applicability.
+
+\subsubsection{Primary Outcome Metrics}
+
+\textbf{Survival Rate.} The proportion of evaluation episodes ending in patient discharge (survival) rather than mortality, computed as:
+\begin{equation}
+\text{Survival Rate} = \frac{1}{N} \sum_{i=1}^N \mathbb{1}[R_i > 0]
+\end{equation}
+where $N$ is the number of evaluation episodes and $R_i = \sum_t r_{i,t}$ is the cumulative return for episode $i$. Survival is determined by the sign of the terminal reward: $r_T = +15$ for discharge (survival) and $r_T = -15$ for death, with intermediate rewards $r_t = 0$. This binary outcome aligns with clinical practice where patient survival is the primary endpoint for sepsis treatment trials \citep{seymour2017sepsis_criteria}.
+
+\textbf{Average Return.} The mean cumulative reward across all episodes, quantifying overall policy performance:
+\begin{equation}
+\bar{R} = \frac{1}{N} \sum_{i=1}^N \sum_{t=1}^{T_i} r_{i,t}
+\end{equation}
+where $T_i$ is the length of episode $i$. We report both mean and standard deviation: $\bar{R} \pm \sigma_R$. Due to the sparse reward structure (only terminal states receive non-zero rewards), returns are highly bimodal: approximately $+15$ for survivors and $-15$ for deceased patients, with minor variations from episode length. Average return provides a continuous performance metric complementary to binary survival rate, enabling finer-grained comparison when survival rates are similar.
+
+\textbf{Average Episode Length.} The mean number of timesteps per episode, reflecting treatment duration:
+\begin{equation}
+\bar{T} = \frac{1}{N} \sum_{i=1}^N T_i
+\end{equation}
+Each timestep represents a 4-hour interval in the ICU. Shorter episodes may indicate either rapid recovery (positive outcome) or early mortality (negative outcome), necessitating joint interpretation with survival rate. We report mean $\pm$ standard deviation to capture variability in ICU length of stay.
+
+\subsubsection{SOFA-Stratified Analysis}
+
+To assess algorithm performance across patient severity levels, we stratify evaluation episodes by initial Sequential Organ Failure Assessment (SOFA) score, a validated clinical severity metric ranging from 0 (no organ dysfunction) to 24 (severe multi-organ failure) \citep{vincent1996sofa}. Higher SOFA scores correlate with increased mortality risk: patients with SOFA $\geq$ 11 face substantially elevated mortality compared to SOFA $\leq$ 5 \citep{seymour2017sepsis_criteria}.
+
+We define three severity strata based on the initial SOFA score $s_0^{\text{SOFA}}$ at episode start:
+\begin{itemize}
+    \item \textbf{Low SOFA} (least severe): $s_0^{\text{SOFA}} \leq 5$ -- Patients with minimal organ dysfunction, expected baseline survival $>$ 95\%.
+    \item \textbf{Medium SOFA} (moderate severity): $6 \leq s_0^{\text{SOFA}} \leq 10$ -- Patients with moderate multi-organ dysfunction.
+    \item \textbf{High SOFA} (most severe): $s_0^{\text{SOFA}} \geq 11$ -- Critically ill patients with severe organ dysfunction, baseline survival $<$ 90\%.
+\end{itemize}
+
+These thresholds align with clinical practice: SOFA $\geq$ 11 is commonly used to identify high-risk patients requiring intensive monitoring and aggressive resuscitation \citep{rhodes2017ssc}. For each stratum, we report survival rate, average return, and sample size ($n$), enabling assessment of whether algorithms maintain performance on critically ill patients where treatment decisions are most consequential.
+
+\textbf{Rationale.} SOFA stratification addresses a key concern in medical AI: algorithms may achieve high overall accuracy by performing well on easy cases (low SOFA, high baseline survival) while failing on difficult cases (high SOFA) where clinical impact is greatest. By separately reporting high-SOFA performance, we ensure algorithms are evaluated on their ability to help the patients who need it most. For instance, an algorithm achieving 95\% overall survival but only 80\% on high-SOFA patients may be less clinically valuable than one with 94\% overall but 90\% on high-SOFA cases, despite lower aggregate performance.
+
+% ============================================================
+\subsection{Baseline Policies}\label{sec:methods:baselines}
+
+To contextualize RL algorithm performance, we evaluate two baseline policies:
+
+\subsubsection{Random Policy}
+
+The random policy selects actions uniformly at random from the 24-action space at each timestep, i.e., $\pi(a|s) = \frac{1}{24}$ for all $s \in \mathcal{S}, a \in \{0, 1, \ldots, 23\}$. This provides a lower bound on expected performance and tests the difficulty of the environment.
+
+\subsubsection{Heuristic Policy}
+
+Implements threshold-based rules from sepsis guidelines \citep{rhodes2017ssc}: escalate IV fluids when SysBP$<$100 mmHg or lactate$>$2.0 mmol/L; escalate vasopressors when MeanBP$<$65 mmHg. Achieved 94.6\% survival.
+
+\subsubsection{Evaluation Protocol}
+
+All policies (random, heuristic, BC, CQL, DQN, DDQN-Attention, DDQN-Residual, SAC) are evaluated on $N = 500$ episodes in the Gym-Sepsis simulator using a standardized protocol for fair comparison:
+
+\textbf{Episode Initialization.} Each episode begins with \texttt{env.reset()}, which samples an initial patient state from the MIMIC-III-derived distribution learned by the gym-sepsis simulator \citep{raghu2017sepsis_drl}. This stochastic initialization ensures evaluation covers diverse patient presentations (varying SOFA scores, comorbidities, vital signs) reflective of real ICU populations. Each algorithm is evaluated on an independently sampled set of 500 episodes drawn from the same MIMIC-III-derived starting state distribution. While all algorithms are evaluated using the same simulator and sampling distribution, the specific patient trajectories encountered by each algorithm differ due to the stochastic episode initialization. With 500 episodes per algorithm, performance metrics should converge to distribution-level expectations, though patient-level comparisons across algorithms are not possible.
+
+\textbf{Deterministic Policy Execution.} Policies are evaluated deterministically (no exploration noise, no stochasticity in action selection) to assess their learned behavior without confounding exploration randomness. For discrete policies (BC, CQL, DQN, DDQN variants), we select $a_t = \arg\max_a Q(s_t, a)$ or $a_t = \arg\max_a \pi(a|s_t)$. For SAC (stochastic policy), we use the mean action $a_t = \mathbb{E}_{a \sim \pi(\cdot|s_t)}[a]$ rather than sampling, equivalent to setting the temperature parameter to zero. This protocol mirrors clinical deployment where policies must make reliable, reproducible decisions without trial-and-error exploration.
+
+\textbf{Episode Termination.} Episodes terminate when the simulator's learned dynamics model predicts either patient discharge (survival) or death (mortality), or after 50 timesteps (200 hours / 8.3 days), whichever occurs first. The vast majority of episodes ($>$ 95\%) terminate naturally before the 50-step limit, indicating the simulator's dynamics model produces realistic ICU trajectories.
+
+\textbf{Data Collection and Reporting.} For each episode, we record: (1) initial SOFA score $s_0^{\text{SOFA}}$, (2) cumulative return $R = \sum_t r_t$, (3) episode length $T$, (4) survival outcome (binary). We aggregate across all 500 episodes to compute overall metrics (survival rate, average return, average length) and SOFA-stratified metrics. All results are reported as mean $\pm$ standard deviation. Given the large sample size ($N = 500$) and sampling from a consistent distribution, performance differences exceeding expected sampling variability (approximately $\pm 2\%$ for survival rates) likely reflect genuine algorithmic differences rather than evaluation set variance.
+
+% End of Methods section

@@ -1,0 +1,7 @@
+Algorithm,Paradigm,Max Saliency,Top Feature,Saliency Range,Interpretability,Survival (%),High-SOFA Survival (%)
+CQL,Offline,40.06,SysBP,±4 to ±40,Excellent,94.0,88.5
+DDQN-Attention,Online,3.57,qSOFA,±1.0 to ±3.6,Moderate,95.4,90.5
+DDQN-Residual,Online,2.93,INR,±1.0 to ±2.9,Moderate,94.2,87.0
+SAC,Online,1.17,INR,±0.5 to ±1.2,Limited,94.8,88.7
+BC,Offline,0.78,qSOFA,±0.05 to ±0.78,Mixed,94.2,88.6
+DQN,Offline (online trained),0.069,INR,±0.02 to ±0.07,Poor,94.0,84.3

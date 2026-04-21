@@ -1,0 +1,29 @@
+\documentclass[11pt]{letter}
+\usepackage[margin=1in]{geometry}
+\usepackage{times}
+
+\signature{Zhiyu Cheng, Yalun Ding, Chuanhui Peng}
+\address{The George Washington University\\Washington, DC, USA}
+
+\begin{document}
+
+\begin{letter}{Editorial Office}
+
+\opening{Dear Editor,}
+
+We are pleased to submit our manuscript titled ``Performance-Interpretability Trade-offs in Offline Reinforcement Learning for Sepsis Treatment'' for consideration.
+
+Sepsis remains a leading cause of death in intensive care units worldwide. Reinforcement learning has shown promise in optimizing sepsis treatment, yet a critical question remains unanswered: how do different RL algorithms compare in terms of both clinical outcomes and decision interpretability? This question matters because regulatory agencies require explainable AI systems for medical applications, and clinicians need to understand why an algorithm recommends a particular treatment.
+
+Our study addresses this gap by comparing 6 RL algorithms within the gym-sepsis simulator. We use Linearly Estimated Gradients to measure how strongly each algorithm relies on clinically relevant features when making treatment decisions. Our results show that Conservative Q-Learning achieves saliency scores 600 times stronger than vanilla Deep Q-Network while maintaining comparable survival rates. This finding suggests that algorithm choice can enhance interpretability without sacrificing performance.
+
+We believe our work fits well with the scope of your journal for several reasons. The study provides a systematic comparison of offline and online RL methods using both performance metrics and interpretability analysis. The findings offer practical guidance for selecting RL algorithms in safety-critical healthcare applications. The methodology we developed can serve as a template for future healthcare RL studies.
+
+We confirm that this manuscript has not been published elsewhere and is not under consideration by another journal. All authors have approved the manuscript and agree with its submission.
+
+Thank you for considering our work. We look forward to hearing from you.
+
+\closing{Sincerely,}
+
+\end{letter}
+\end{document}
