@@ -2,7 +2,7 @@
 Evaluate GitHub models (DoubleDQN+Attention, DoubleDQN+Residual, SAC) with strict 500-episode protocol
 
 This script:
-1. Loads the three models from github_models/ directory
+1. Loads the three online models from results/models/ directory
 2. Defines custom encoder architectures (Attention, Residual)
 3. Evaluates with 500 episodes + SOFA stratification
 4. Compares with your existing BC/CQL/DQN results
@@ -375,11 +375,11 @@ def main():
         print("Continuing anyway (encoders may already be registered)\n")
 
     # Model paths
-    github_dir = project_root / "github_models"
+    models_dir = project_root / "results" / "models"
     models = {
-        'DDQN-Attention': github_dir / "ddqn_online_att_model_final.d3",
-        'DDQN-Residual': github_dir / "ddqn_online_res_model_final.d3",
-        'SAC': github_dir / "sac_online_model_final.d3"
+        'DDQN-Attention': models_dir / "ddqn_attention.d3",
+        'DDQN-Residual': models_dir / "ddqn_residual.d3",
+        'SAC': models_dir / "sac.d3"
     }
 
     n_episodes = 500

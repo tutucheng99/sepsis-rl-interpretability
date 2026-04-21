@@ -30,11 +30,13 @@ d3rlpy_logs/
 # Large data files
 *.zip
 *.tar.gz
+!results/models/*.zip
 
 # Temporary files
 *.tmp
 temp_*.py
 nul
+~$*
 
 # LaTeX auxiliary files
 *.aux

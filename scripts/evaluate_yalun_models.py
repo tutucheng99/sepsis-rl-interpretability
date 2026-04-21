@@ -1,10 +1,10 @@
 """
 Evaluate Yalun's GitHub Models with Strict 500-Episode Protocol
 
-This script evaluates the three models from github_models/:
-- ddqn_online_att_model_final.d3 (DoubleDQN + Attention)
-- ddqn_online_res_model_final.d3 (DoubleDQN + Residual)
-- sac_online_model_final.d3 (DiscreteSAC)
+This script evaluates the three online RL models from results/models/:
+- ddqn_attention.d3 (DoubleDQN + Attention)
+- ddqn_residual.d3 (DoubleDQN + Residual)
+- sac.d3 (DiscreteSAC)
 
 Using the same rigorous protocol as your BC/CQL/DQN evaluation:
 - 500 episodes per model
@@ -461,11 +461,11 @@ def main():
     register_custom_encoders()
 
     # Step 2: Define model paths
-    github_dir = project_root / "github_models"
+    models_dir = project_root / "results" / "models"
     models_to_evaluate = {
-        'DDQN-Attention': github_dir / "ddqn_online_att_model_final.d3",
-        'DDQN-Residual': github_dir / "ddqn_online_res_model_final.d3",
-        'SAC': github_dir / "sac_online_model_final.d3"
+        'DDQN-Attention': models_dir / "ddqn_attention.d3",
+        'DDQN-Residual': models_dir / "ddqn_residual.d3",
+        'SAC': models_dir / "sac.d3"
     }
 
     n_episodes = 500
@@ -539,7 +539,7 @@ def main():
         print("[ERROR] No models were successfully evaluated")
         print(f"{'='*80}")
         print("\nTroubleshooting:")
-        print("  1. Check that model files exist in github_models/")
+        print("  1. Check that model files exist in results/models/")
         print("  2. Verify d3rlpy version compatibility")
         print("  3. Ensure all dependencies are installed")
 

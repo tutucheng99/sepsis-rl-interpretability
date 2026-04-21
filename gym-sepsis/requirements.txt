@@ -1,0 +1,9 @@
+tensorflow==2.11.0
+keras==2.11.0
+numpy==1.23.5
+h5py==3.7.0
+pandas
+gym==0.26.2
+protobuf<4
+
+

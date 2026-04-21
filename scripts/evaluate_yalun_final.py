@@ -404,11 +404,11 @@ def main():
     print()
 
     # Model paths
-    github_dir = project_root / "github_models"
+    models_dir = project_root / "results" / "models"
     models = {
-        'DDQN-Attention': github_dir / "ddqn_online_att_model_final.d3",
-        'DDQN-Residual': github_dir / "ddqn_online_res_model_final.d3",
-        'SAC': github_dir / "sac_online_model_final.d3"
+        'DDQN-Attention': models_dir / "ddqn_attention.d3",
+        'DDQN-Residual': models_dir / "ddqn_residual.d3",
+        'SAC': models_dir / "sac.d3"
     }
 
     n_episodes = 500

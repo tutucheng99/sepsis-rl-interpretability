@@ -6,7 +6,6 @@ Combines offline (BC, CQL, DQN) and online (DDQN-Att, DDQN-Res, SAC) results
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-import json
 from pathlib import Path
 import pandas as pd
 
@@ -51,13 +50,9 @@ offline_models = {
 }
 
 # ============================================================
-# DATA: Online models (from github_models/sepsis_leg_analysis JSON)
+# DATA: Online models (values from LEG analysis of trained models
+# in results/models/ — DDQN-Attention, DDQN-Residual, SAC)
 # ============================================================
-online_json_path = Path(r"C:\Users\tutu9\OneDrive\桌面\EVERYTHING\learning\GWU\Fall 2025\Stats 8289\project_1\github_models\sepsis_leg_analysis\multi_model_feature_importance.json")
-
-with open(online_json_path, 'r') as f:
-    online_data = json.load(f)
-
 online_models = {
     'DDQN-Attention': {
         'max_saliency': 3.57,  # qSOFA from JSON
